@@ -26,6 +26,11 @@ export type TrackerState = {
   logs: HabitLogMap;
 };
 
+export const emptyTrackerState: TrackerState = {
+  habits: [],
+  logs: {},
+};
+
 type HabitTemplate = {
   key: string;
   name: string;
@@ -249,16 +254,8 @@ export function buildSeedTrackerState(): TrackerState {
   };
 }
 
-const localTemplateIdMap = Object.fromEntries(
-  habitTemplates.map((template) => [template.key, template.key]),
-) as Record<string, string>;
-
 export const habitTypeCopy: Record<ActivityType, string> = {
   checkbox: "Checkbox",
   count: "Count",
   minutes: "Minutes",
 };
-
-export const initialHabits: Habit[] = buildHabitsFromTemplates(localTemplateIdMap);
-
-export const initialLogs: HabitLogMap = buildLogsFromTemplates(localTemplateIdMap);

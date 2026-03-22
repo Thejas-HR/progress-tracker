@@ -42,9 +42,8 @@ import {
   HabitDraft,
   HabitLogMap,
   HabitPeriod,
+  emptyTrackerState,
   habitTypeCopy,
-  initialHabits,
-  initialLogs,
   TrackerState,
 } from "@/lib/tracker-data";
 import { cn } from "@/lib/utils";
@@ -83,25 +82,25 @@ const defaultDraft: HabitDraft = {
 
 function readStoredState(): TrackerState {
   if (typeof window === "undefined") {
-    return { habits: initialHabits, logs: initialLogs };
+    return emptyTrackerState;
   }
 
   const raw = window.localStorage.getItem(STORAGE_KEY);
 
   if (!raw) {
-    return { habits: initialHabits, logs: initialLogs };
+    return emptyTrackerState;
   }
 
   try {
     const parsed = JSON.parse(raw) as TrackerState;
 
     return {
-      habits: parsed.habits ?? initialHabits,
-      logs: parsed.logs ?? initialLogs,
+      habits: parsed.habits ?? emptyTrackerState.habits,
+      logs: parsed.logs ?? emptyTrackerState.logs,
     };
   } catch {
     window.localStorage.removeItem(STORAGE_KEY);
-    return { habits: initialHabits, logs: initialLogs };
+    return emptyTrackerState;
   }
 }
 
