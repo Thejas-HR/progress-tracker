@@ -257,34 +257,10 @@ export function HabitDashboard() {
   }, []);
 
   useEffect(() => {
-    const observers = sectionTabs
-      .map(({ id }) => document.getElementById(id))
-      .filter((element): element is HTMLElement => Boolean(element));
-
-    if (observers.length === 0) {
-      return;
+    if (!sectionTabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab("today");
     }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0];
-
-        if (visible?.target?.id) {
-          setActiveTab(visible.target.id as (typeof sectionTabs)[number]["id"]);
-        }
-      },
-      {
-        rootMargin: "-30% 0px -55% 0px",
-        threshold: [0.1, 0.25, 0.5, 0.75],
-      },
-    );
-
-    observers.forEach((element) => observer.observe(element));
-
-    return () => observer.disconnect();
-  }, []);
+  }, [activeTab]);
 
   async function refreshFromSupabase() {
     setIsRemoteBusy(true);
@@ -572,10 +548,426 @@ export function HabitDashboard() {
 
   function handleTabClick(sectionId: (typeof sectionTabs)[number]["id"]) {
     setActiveTab(sectionId);
-    document.getElementById(sectionId)?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
+  }
+
+  function renderTodayView() {
+    return (
+      <Card>
+        <CardHeader className="flex-row items-start justify-between space-y-0">
+          <div className="space-y-1">
+            <CardTitle>Today</CardTitle>
+            <CardDescription>
+              Clean, fast logging for the habits you want to touch every day.
+            </CardDescription>
+          </div>
+          <div className="hidden items-center gap-2 md:flex">
+            <Badge variant="outline">{completedTodayCount} complete</Badge>
+            <Badge variant="secondary">{dailyCompletion}% today</Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">Today</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">{dailyCompletion}%</p>
+              <p className="text-xs text-slate-500">Completion rate</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">Completed</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">
+                {completedTodayCount}/{habits.length}
+              </p>
+              <p className="text-xs text-slate-500">Habits at target</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">This week</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">{weeklyAverage}%</p>
+              <p className="text-xs text-slate-500">Average progress</p>
+            </div>
+          </div>
+
+          {habits.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
+              No habits yet. Add your first one from the setup view.
+            </div>
+          ) : (
+            habits.map((habit) => {
+              const value = todayLogs[habit.id] ?? 0;
+              const percent = Math.min(100, Math.round((value / habit.goalTarget) * 100));
+              const complete = value >= habit.goalTarget;
+
+              return (
+                <div
+                  key={habit.id}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-3"
+                >
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="min-w-0 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-medium text-slate-900">{habit.name}</p>
+                        <Badge
+                          variant="outline"
+                          className={cn("border", categoryTone[habit.category])}
+                        >
+                          {habit.category}
+                        </Badge>
+                        <Badge variant="secondary">{habitTypeCopy[habit.type]}</Badge>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                        <span>
+                          {habit.goalPeriod === "daily" ? "Daily" : "Weekly"} target:{" "}
+                          {habit.goalTarget} {metricCopy(habit)}
+                        </span>
+                        <span>{completionLabel(habit, value)}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {habit.type === "checkbox" ? (
+                        <Button
+                          variant={complete ? "secondary" : "default"}
+                          size="sm"
+                          onClick={() => toggleCheckbox(habit)}
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                          {complete ? "Done" : "Mark done"}
+                        </Button>
+                      ) : (
+                        <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1">
+                          <Input
+                            className="h-8 w-20 border-0 bg-transparent px-1 text-right shadow-none focus-visible:ring-0"
+                            min={0}
+                            step={inputStep(habit.type)}
+                            type="number"
+                            value={value}
+                            onChange={(event) => updateNumericHabit(habit, event.target.value)}
+                          />
+                          <span className="text-xs text-slate-500">{metricCopy(habit)}</span>
+                        </div>
+                      )}
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => void deleteHabit(habit.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <Progress
+                      value={percent}
+                      indicatorClassName={complete ? "bg-emerald-600" : "bg-slate-900"}
+                    />
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  function renderWeeklyView() {
+    return (
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Weekly progress</CardTitle>
+            <CardDescription>
+              {buildWeeklyRangeLabel(currentWeekStart)} across daily and weekly goals.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {weeklySummary.map(({ habit, actual, target, percent, helper }) => (
+              <div key={habit.id} className="space-y-2">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">{habit.name}</p>
+                    <p className="text-xs text-slate-500">{helper}</p>
+                  </div>
+                  <span className="text-xs font-medium text-slate-600">
+                    {actual}/{target}
+                  </span>
+                </div>
+                <Progress value={percent} />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Streaks</CardTitle>
+            <CardDescription>Small wins compound.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {streaks.slice(0, 5).map(({ habit, days }) => (
+              <div key={habit.id} className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-medium">{habit.name}</p>
+                  <p className="text-xs text-slate-500">{habit.category}</p>
+                </div>
+                <div className="flex items-center gap-1 text-sm font-medium text-slate-700">
+                  <Flame className="h-4 w-4 text-amber-500" />
+                  {days}d
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  function renderConsistencyView() {
+    return (
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Consistency map</CardTitle>
+            <CardDescription>
+              Last 12 weeks at a glance. Your strongest day was{" "}
+              {bestDay.best.date ? formatShortDate(bestDay.best.date) : "still loading"}.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-7 gap-2 sm:grid-cols-12 lg:grid-cols-14">
+              {heatmapDays.map(({ date, intensity, completed, total }) => (
+                <div key={date} className="space-y-1">
+                  <div
+                    className={cn(
+                      "aspect-square rounded-md border border-slate-200",
+                      heatmapTone(intensity),
+                    )}
+                    title={`${formatShortDate(date)}: ${completed}/${total} goals hit`}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span>Less consistent</span>
+              <div className="flex items-center gap-1">
+                {[0, 1, 2, 3, 4].map((intensity) => (
+                  <div
+                    key={intensity}
+                    className={cn(
+                      "h-3 w-3 rounded-[4px] border border-slate-200",
+                      heatmapTone(intensity),
+                    )}
+                  />
+                ))}
+              </div>
+              <span>More consistent</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Focus</CardTitle>
+            <CardDescription>Helpful context, without stealing attention from today.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">Best day</p>
+              <p className="mt-1 text-sm text-slate-700">
+                {bestDay.best.date
+                  ? `${formatShortDate(bestDay.best.date)} with ${bestDay.best.completed}/${bestDay.best.total} habits completed.`
+                  : "No history yet."}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">Active habits</p>
+              <p className="mt-1 text-sm text-slate-700">
+                {habits.length} habits across health, learning, discipline, and career.
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">Daily principle</p>
+              <p className="mt-1 text-sm text-slate-700">
+                Show up, log quickly, and let consistency matter more than perfection.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  function renderSetupView() {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Setup</CardTitle>
+          <CardDescription>Keep admin tasks off the main flow, but close at hand.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm font-medium text-slate-900">Add habit</p>
+              <p className="text-xs text-slate-500">
+                Create a new tracker without leaving the dashboard.
+              </p>
+            </div>
+            <Input
+              placeholder="Habit name"
+              value={draft.name}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, name: event.target.value }))
+              }
+            />
+
+            <select
+              className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm text-slate-900 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-slate-950/10"
+              value={draft.category}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, category: event.target.value }))
+              }
+            >
+              {categories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+
+            <div className="grid grid-cols-2 gap-3">
+              <select
+                className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm text-slate-900 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-slate-950/10"
+                value={draft.type}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    type: event.target.value as ActivityType,
+                    goalTarget: event.target.value === "checkbox" ? 1 : current.goalTarget,
+                  }))
+                }
+              >
+                {Object.entries(habitTypeCopy).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm text-slate-900 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-slate-950/10"
+                value={draft.goalPeriod}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    goalPeriod: event.target.value as HabitPeriod,
+                  }))
+                }
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </div>
+
+            <Input
+              type="number"
+              min={1}
+              step={inputStep(draft.type)}
+              disabled={draft.type === "checkbox"}
+              value={draft.goalTarget}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  goalTarget: Number(event.target.value),
+                }))
+              }
+            />
+
+            <Button className="w-full" onClick={() => void addHabit()}>
+              <Plus className="h-4 w-4" />
+              Add habit
+            </Button>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-medium text-slate-900">Sync and access</p>
+              <p className="text-xs text-slate-500">
+                Sign in if you want the same dashboard on laptop and phone.
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+              {statusMessage}
+            </div>
+
+            {isSupabaseConfigured ? (
+              canUseCloud ? (
+                <div className="space-y-3">
+                  <div className="rounded-lg border border-slate-200 px-3 py-2">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Signed in</p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">
+                      {session?.user.email}
+                    </p>
+                  </div>
+                  {habits.length === 0 && (
+                    <Button
+                      variant="secondary"
+                      className="w-full"
+                      onClick={() => void handleSeedStarterHabits()}
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                      Load starter habits
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => void refreshFromSupabase()}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    Refresh from cloud
+                  </Button>
+                  <Button variant="ghost" className="w-full" onClick={() => void handleSignOut()}>
+                    Sign out
+                  </Button>
+                  {hasLocalImportData ? (
+                    <Button
+                      variant="secondary"
+                      className="w-full"
+                      onClick={() => void handleImportLocalData()}
+                    >
+                      Import local data
+                    </Button>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <Input
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                  />
+                  <Button
+                    className="w-full"
+                    disabled={isSendingLink}
+                    onClick={() => void handleMagicLink()}
+                  >
+                    <LogIn className="h-4 w-4" />
+                    {isSendingLink ? "Sending link..." : "Send magic link"}
+                  </Button>
+                </div>
+              )
+            ) : (
+              <p className="text-sm text-slate-500">
+                Supabase keys are not set yet, so this build is staying in local mode.
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
@@ -636,418 +1028,10 @@ export function HabitDashboard() {
             </div>
           </div>
         </div>
-
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="grid gap-6">
-            <Card id="today" className="scroll-mt-28">
-              <CardHeader className="flex-row items-start justify-between space-y-0">
-                <div className="space-y-1">
-                  <CardTitle>Today</CardTitle>
-                  <CardDescription>
-                    Clean, fast logging for the habits you want to touch every day.
-                  </CardDescription>
-                </div>
-                <div className="hidden items-center gap-2 md:flex">
-                  <Badge variant="outline">{completedTodayCount} complete</Badge>
-                  <Badge variant="secondary">{dailyCompletion}% today</Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Today</p>
-                    <p className="mt-1 text-lg font-semibold text-slate-900">{dailyCompletion}%</p>
-                    <p className="text-xs text-slate-500">Completion rate</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Completed</p>
-                    <p className="mt-1 text-lg font-semibold text-slate-900">
-                      {completedTodayCount}/{habits.length}
-                    </p>
-                    <p className="text-xs text-slate-500">Habits at target</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">This week</p>
-                    <p className="mt-1 text-lg font-semibold text-slate-900">{weeklyAverage}%</p>
-                    <p className="text-xs text-slate-500">Average progress</p>
-                  </div>
-                </div>
-
-                {habits.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
-                    No habits yet. Add your first one from the setup panel.
-                  </div>
-                ) : (
-                  habits.map((habit) => {
-                    const value = todayLogs[habit.id] ?? 0;
-                    const percent = Math.min(100, Math.round((value / habit.goalTarget) * 100));
-                    const complete = value >= habit.goalTarget;
-
-                    return (
-                      <div
-                        key={habit.id}
-                        className="rounded-lg border border-slate-200 bg-white px-4 py-3"
-                      >
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                          <div className="min-w-0 space-y-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="truncate text-sm font-medium text-slate-900">
-                                {habit.name}
-                              </p>
-                              <Badge
-                                variant="outline"
-                                className={cn("border", categoryTone[habit.category])}
-                              >
-                                {habit.category}
-                              </Badge>
-                              <Badge variant="secondary">{habitTypeCopy[habit.type]}</Badge>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                              <span>
-                                {habit.goalPeriod === "daily" ? "Daily" : "Weekly"} target:{" "}
-                                {habit.goalTarget} {metricCopy(habit)}
-                              </span>
-                              <span>{completionLabel(habit, value)}</span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            {habit.type === "checkbox" ? (
-                              <Button
-                                variant={complete ? "secondary" : "default"}
-                                size="sm"
-                                onClick={() => toggleCheckbox(habit)}
-                              >
-                                <CheckCircle2 className="h-4 w-4" />
-                                {complete ? "Done" : "Mark done"}
-                              </Button>
-                            ) : (
-                              <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1">
-                                <Input
-                                  className="h-8 w-20 border-0 bg-transparent px-1 text-right shadow-none focus-visible:ring-0"
-                                  min={0}
-                                  step={inputStep(habit.type)}
-                                  type="number"
-                                  value={value}
-                                  onChange={(event) => updateNumericHabit(habit, event.target.value)}
-                                />
-                                <span className="text-xs text-slate-500">{metricCopy(habit)}</span>
-                              </div>
-                            )}
-
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => void deleteHabit(habit.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-
-                        <div className="mt-3">
-                          <Progress
-                            value={percent}
-                            indicatorClassName={complete ? "bg-emerald-600" : "bg-slate-900"}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </CardContent>
-            </Card>
-
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-              <Card id="weekly" className="scroll-mt-28">
-                <CardHeader>
-                  <CardTitle>Weekly progress</CardTitle>
-                  <CardDescription>
-                    {buildWeeklyRangeLabel(currentWeekStart)} across daily and weekly goals.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {weeklySummary.map(({ habit, actual, target, percent, helper }) => (
-                    <div key={habit.id} className="space-y-2">
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <p className="text-sm font-medium text-slate-900">{habit.name}</p>
-                          <p className="text-xs text-slate-500">{helper}</p>
-                        </div>
-                        <span className="text-xs font-medium text-slate-600">
-                          {actual}/{target}
-                        </span>
-                      </div>
-                      <Progress value={percent} />
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Streaks</CardTitle>
-                  <CardDescription>Small wins compound.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {streaks.slice(0, 5).map(({ habit, days }) => (
-                    <div key={habit.id} className="flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <p className="text-sm font-medium">{habit.name}</p>
-                        <p className="text-xs text-slate-500">{habit.category}</p>
-                      </div>
-                      <div className="flex items-center gap-1 text-sm font-medium text-slate-700">
-                        <Flame className="h-4 w-4 text-amber-500" />
-                        {days}d
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </div>
-
-            <Card id="consistency" className="scroll-mt-28">
-              <CardHeader>
-                <CardTitle>Consistency map</CardTitle>
-                <CardDescription>
-                  Last 12 weeks at a glance. Your strongest day was{" "}
-                  {bestDay.best.date ? formatShortDate(bestDay.best.date) : "still loading"}.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-7 gap-2 sm:grid-cols-12 lg:grid-cols-14">
-                  {heatmapDays.map(({ date, intensity, completed, total }) => (
-                    <div key={date} className="space-y-1">
-                      <div
-                        className={cn(
-                          "aspect-square rounded-md border border-slate-200",
-                          heatmapTone(intensity),
-                        )}
-                        title={`${formatShortDate(date)}: ${completed}/${total} goals hit`}
-                      />
-                    </div>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span>Less consistent</span>
-                  <div className="flex items-center gap-1">
-                    {[0, 1, 2, 3, 4].map((intensity) => (
-                      <div
-                        key={intensity}
-                        className={cn(
-                          "h-3 w-3 rounded-[4px] border border-slate-200",
-                          heatmapTone(intensity),
-                        )}
-                      />
-                    ))}
-                  </div>
-                  <span>More consistent</span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <aside className="grid gap-6">
-            <Card id="setup" className="scroll-mt-28">
-              <CardHeader>
-                <CardTitle>Setup</CardTitle>
-                <CardDescription>Keep admin tasks off the main flow, but close at hand.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">Add habit</p>
-                    <p className="text-xs text-slate-500">
-                      Create a new tracker without leaving the dashboard.
-                    </p>
-                  </div>
-                  <Input
-                    placeholder="Habit name"
-                    value={draft.name}
-                    onChange={(event) =>
-                      setDraft((current) => ({ ...current, name: event.target.value }))
-                    }
-                  />
-
-                  <select
-                    className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm text-slate-900 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-slate-950/10"
-                    value={draft.category}
-                    onChange={(event) =>
-                      setDraft((current) => ({ ...current, category: event.target.value }))
-                    }
-                  >
-                    {categories.map((category) => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
-                    ))}
-                  </select>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <select
-                      className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm text-slate-900 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-slate-950/10"
-                      value={draft.type}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          type: event.target.value as ActivityType,
-                          goalTarget: event.target.value === "checkbox" ? 1 : current.goalTarget,
-                        }))
-                      }
-                    >
-                      {Object.entries(habitTypeCopy).map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-
-                    <select
-                      className="flex h-9 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-sm text-slate-900 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-slate-950/10"
-                      value={draft.goalPeriod}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          goalPeriod: event.target.value as HabitPeriod,
-                        }))
-                      }
-                    >
-                      <option value="daily">Daily</option>
-                      <option value="weekly">Weekly</option>
-                    </select>
-                  </div>
-
-                  <Input
-                    type="number"
-                    min={1}
-                    step={inputStep(draft.type)}
-                    disabled={draft.type === "checkbox"}
-                    value={draft.goalTarget}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        goalTarget: Number(event.target.value),
-                      }))
-                    }
-                  />
-
-                  <Button className="w-full" onClick={() => void addHabit()}>
-                    <Plus className="h-4 w-4" />
-                    Add habit
-                  </Button>
-                </div>
-
-                <Separator />
-
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">Sync and access</p>
-                    <p className="text-xs text-slate-500">
-                      Sign in if you want the same dashboard on laptop and phone.
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                    {statusMessage}
-                  </div>
-
-                  {isSupabaseConfigured ? (
-                    canUseCloud ? (
-                      <div className="space-y-3">
-                        <div className="rounded-lg border border-slate-200 px-3 py-2">
-                          <p className="text-xs uppercase tracking-wide text-slate-500">
-                            Signed in
-                          </p>
-                          <p className="mt-1 text-sm font-medium text-slate-900">
-                            {session?.user.email}
-                          </p>
-                        </div>
-                        {habits.length === 0 && (
-                          <Button
-                            variant="secondary"
-                            className="w-full"
-                            onClick={() => void handleSeedStarterHabits()}
-                          >
-                            <ShieldCheck className="h-4 w-4" />
-                            Load starter habits
-                          </Button>
-                        )}
-                        <Button
-                          variant="outline"
-                          className="w-full"
-                          onClick={() => void refreshFromSupabase()}
-                        >
-                          <RefreshCw className="h-4 w-4" />
-                          Refresh from cloud
-                        </Button>
-                        <Button variant="ghost" className="w-full" onClick={() => void handleSignOut()}>
-                          Sign out
-                        </Button>
-                        {hasLocalImportData ? (
-                          <Button
-                            variant="secondary"
-                            className="w-full"
-                            onClick={() => void handleImportLocalData()}
-                          >
-                            Import local data
-                          </Button>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <Input
-                          placeholder="you@example.com"
-                          value={email}
-                          onChange={(event) => setEmail(event.target.value)}
-                        />
-                        <Button
-                          className="w-full"
-                          disabled={isSendingLink}
-                          onClick={() => void handleMagicLink()}
-                        >
-                          <LogIn className="h-4 w-4" />
-                          {isSendingLink ? "Sending link..." : "Send magic link"}
-                        </Button>
-                      </div>
-                    )
-                  ) : (
-                    <p className="text-sm text-slate-500">
-                      Supabase keys are not set yet, so this build is staying in local mode.
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Focus</CardTitle>
-                <CardDescription>Helpful context, without stealing attention from today.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Best day</p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    {bestDay.best.date
-                      ? `${formatShortDate(bestDay.best.date)} with ${bestDay.best.completed}/${bestDay.best.total} habits completed.`
-                      : "No history yet."}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Active habits</p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    {habits.length} habits across health, learning, discipline, and career.
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Daily principle</p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    Show up, log quickly, and let consistency matter more than perfection.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </aside>
-        </section>
+        {activeTab === "today" && renderTodayView()}
+        {activeTab === "weekly" && renderWeeklyView()}
+        {activeTab === "consistency" && renderConsistencyView()}
+        {activeTab === "setup" && renderSetupView()}
       </div>
     </main>
   );
