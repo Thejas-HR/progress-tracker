@@ -154,6 +154,10 @@ function heatmapTone(intensity: number) {
   return "bg-slate-900";
 }
 
+function normalizeHabitName(name: string) {
+  return name.trim().toLowerCase();
+}
+
 export function HabitDashboard() {
   const [storedState] = useState<TrackerState>(() => readStoredState());
   const [habits, setHabits] = useState<Habit[]>(storedState.habits);
@@ -176,6 +180,14 @@ export function HabitDashboard() {
   const todayLogs = useMemo(() => logs[todayKey] ?? {}, [logs, todayKey]);
   const lastSevenDays = useMemo(() => getLastNDates(7), []);
   const canUseCloud = isRemoteSession(session);
+  const hasLocalImportData = useMemo(
+    () =>
+      storedState.habits.length > 0 &&
+      Object.values(storedState.logs).some((dayLogs) =>
+        Object.values(dayLogs).some((value) => value > 0),
+      ),
+    [storedState],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -493,6 +505,63 @@ export function HabitDashboard() {
       await signOut();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not sign out.");
+    }
+  }
+
+  async function handleImportLocalData() {
+    if (!canUseCloud) {
+      return;
+    }
+
+    setIsRemoteBusy(true);
+
+    try {
+      const sourceState = storedState;
+      const cloudState = await loadTrackerState();
+      const habitMap = new Map(
+        cloudState.habits.map((habit) => [normalizeHabitName(habit.name), habit]),
+      );
+      const localToCloudId = new Map<string, string>();
+
+      for (const localHabit of sourceState.habits) {
+        const existingHabit = habitMap.get(normalizeHabitName(localHabit.name));
+
+        if (existingHabit) {
+          localToCloudId.set(localHabit.id, existingHabit.id);
+          continue;
+        }
+
+        const createdHabit = await createHabit({
+          ...localHabit,
+          id: crypto.randomUUID(),
+        });
+
+        habitMap.set(normalizeHabitName(createdHabit.name), createdHabit);
+        localToCloudId.set(localHabit.id, createdHabit.id);
+      }
+
+      for (const [logDate, dayLogs] of Object.entries(sourceState.logs)) {
+        for (const [localHabitId, value] of Object.entries(dayLogs)) {
+          if (value <= 0) {
+            continue;
+          }
+
+          const cloudHabitId = localToCloudId.get(localHabitId);
+
+          if (!cloudHabitId) {
+            continue;
+          }
+
+          await upsertHabitLog(cloudHabitId, logDate, value);
+        }
+      }
+
+      await refreshFromSupabase();
+      setStatusMessage("Imported your localhost progress into cloud sync.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not import local data.");
+    } finally {
+      setIsRemoteBusy(false);
     }
   }
 
@@ -914,6 +983,15 @@ export function HabitDashboard() {
                         <Button variant="ghost" className="w-full" onClick={() => void handleSignOut()}>
                           Sign out
                         </Button>
+                        {hasLocalImportData ? (
+                          <Button
+                            variant="secondary"
+                            className="w-full"
+                            onClick={() => void handleImportLocalData()}
+                          >
+                            Import local data
+                          </Button>
+                        ) : null}
                       </div>
                     ) : (
                       <div className="space-y-3">
