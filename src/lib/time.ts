@@ -1,11 +1,19 @@
 import { Habit, HabitLogMap } from "@/lib/tracker-data";
 
 function toDateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
 export function getTodayKey() {
   return toDateKey(new Date());
+}
+
+export function toDateInputValue(date: Date) {
+  return toDateKey(date);
 }
 
 export function addDays(date: Date, amount: number) {
@@ -23,8 +31,8 @@ export function startOfWeek(date: Date) {
   return copy;
 }
 
-export function getLastNDates(total: number) {
-  const today = new Date();
+export function getLastNDates(total: number, anchorDateKey?: string) {
+  const today = anchorDateKey ? new Date(`${anchorDateKey}T00:00:00`) : new Date();
   return Array.from({ length: total }, (_, index) => {
     const offset = total - index - 1;
     return toDateKey(addDays(today, -offset));

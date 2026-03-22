@@ -35,6 +35,7 @@ import {
   getLastNDates,
   getTodayKey,
   startOfWeek,
+  toDateInputValue,
 } from "@/lib/time";
 import {
   ActivityType,
@@ -173,11 +174,16 @@ export function HabitDashboard() {
   const [isSendingLink, setIsSendingLink] = useState(false);
   const [isRemoteBusy, setIsRemoteBusy] = useState(false);
   const [activeTab, setActiveTab] = useState<(typeof sectionTabs)[number]["id"]>("today");
+  const [localTodayKey, setLocalTodayKey] = useState(() => getTodayKey());
+  const [selectedDateKey, setSelectedDateKey] = useState(() => getTodayKey());
 
-  const todayKey = getTodayKey();
-  const currentWeekStart = useMemo(() => startOfWeek(new Date()), []);
-  const todayLogs = useMemo(() => logs[todayKey] ?? {}, [logs, todayKey]);
-  const lastSevenDays = useMemo(() => getLastNDates(7), []);
+  const todayKey = localTodayKey;
+  const currentWeekStart = useMemo(
+    () => startOfWeek(new Date(`${selectedDateKey}T00:00:00`)),
+    [selectedDateKey],
+  );
+  const todayLogs = useMemo(() => logs[selectedDateKey] ?? {}, [logs, selectedDateKey]);
+  const lastSevenDays = useMemo(() => getLastNDates(7, selectedDateKey), [selectedDateKey]);
   const canUseCloud = isRemoteSession(session);
   const hasLocalImportData = useMemo(
     () =>
@@ -195,6 +201,21 @@ export function HabitDashboard() {
 
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ habits, logs }));
   }, [habits, logs]);
+
+  useEffect(() => {
+    const syncLocalDate = () => setLocalTodayKey(getTodayKey());
+
+    syncLocalDate();
+    const interval = window.setInterval(syncLocalDate, 60_000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const currentLocalDate = getTodayKey();
+
+    setSelectedDateKey((current) => (current === todayKey ? currentLocalDate : current));
+  }, [todayKey]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -352,8 +373,8 @@ export function HabitDashboard() {
 
     setLogs((current) => ({
       ...current,
-      [todayKey]: {
-        ...(current[todayKey] ?? {}),
+      [selectedDateKey]: {
+        ...(current[selectedDateKey] ?? {}),
         [habit.id]: nextValue,
       },
     }));
@@ -363,7 +384,7 @@ export function HabitDashboard() {
     }
 
     try {
-      await upsertHabitLog(habit.id, todayKey, nextValue);
+      await upsertHabitLog(habit.id, selectedDateKey, nextValue);
       setStatusMessage(`Saved ${habit.name} to cloud sync.`);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not save your progress.");
@@ -551,24 +572,53 @@ export function HabitDashboard() {
   }
 
   function renderTodayView() {
+    const isViewingToday = selectedDateKey === todayKey;
+
     return (
       <Card>
         <CardHeader className="flex-row items-start justify-between space-y-0">
           <div className="space-y-1">
-            <CardTitle>Today</CardTitle>
+            <CardTitle>{isViewingToday ? "Today" : "Daily log"}</CardTitle>
             <CardDescription>
               Clean, fast logging for the habits you want to touch every day.
             </CardDescription>
           </div>
           <div className="hidden items-center gap-2 md:flex">
             <Badge variant="outline">{completedTodayCount} complete</Badge>
-            <Badge variant="secondary">{dailyCompletion}% today</Badge>
+            <Badge variant="secondary">
+              {dailyCompletion}% {isViewingToday ? "today" : "for selected day"}
+            </Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Selected date</p>
+              <p className="text-sm text-slate-600">
+                Choose a specific day if you want to review or log another date.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Input
+                type="date"
+                className="w-full sm:w-[180px]"
+                value={selectedDateKey}
+                max={toDateInputValue(new Date())}
+                onChange={(event) => setSelectedDateKey(event.target.value)}
+              />
+              {!isViewingToday ? (
+                <Button variant="outline" onClick={() => setSelectedDateKey(todayKey)}>
+                  Jump to today
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
           <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
             <div>
-              <p className="text-xs uppercase tracking-wide text-slate-500">Today</p>
+              <p className="text-xs uppercase tracking-wide text-slate-500">
+                {isViewingToday ? "Today" : "Selected day"}
+              </p>
               <p className="mt-1 text-lg font-semibold text-slate-900">{dailyCompletion}%</p>
               <p className="text-xs text-slate-500">Completion rate</p>
             </div>
@@ -1001,7 +1051,7 @@ export function HabitDashboard() {
               </Badge>
             )}
             <Badge variant="outline" className="text-slate-500">
-              {formatShortDate(todayKey)}
+              {formatShortDate(selectedDateKey)}
             </Badge>
           </div>
         </header>
